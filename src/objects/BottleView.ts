@@ -1,0 +1,141 @@
+import Phaser from 'phaser';
+import type { BottleSnapshot } from '../core/models/Bottle';
+import { swatch } from '../config/Palette';
+
+export interface BottleViewStyle {
+  unitHeight: number;
+  smallWidth: number;
+  largeWidth: number;
+  padding: number;
+}
+
+const DEFAULT_STYLE: BottleViewStyle = {
+  unitHeight: 24,
+  smallWidth: 50,
+  largeWidth: 66,
+  padding: 6,
+};
+
+/**
+ * Phaser view for a single bottle. It is a pure renderer: it draws whatever
+ * snapshot it is handed and forwards taps to a callback. It holds no game
+ * state and knows nothing about the rules.
+ */
+export class BottleView extends Phaser.GameObjects.Container {
+  readonly bottleId: number;
+  readonly isLarge: boolean;
+  readonly capacity: number;
+
+  private style: BottleViewStyle;
+  private glass: Phaser.GameObjects.Graphics;
+  private liquid: Phaser.GameObjects.Graphics;
+  private capG: Phaser.GameObjects.Graphics;
+  private hit: Phaser.GameObjects.Rectangle;
+  private selected = false;
+  private lastSnapshot: BottleSnapshot;
+
+  readonly bodyWidth: number;
+  readonly bodyHeight: number;
+
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    snapshot: BottleSnapshot,
+    onTap: (id: number) => void,
+    style: Partial<BottleViewStyle> = {},
+  ) {
+    super(scene, x, y);
+    this.style = { ...DEFAULT_STYLE, ...style };
+    this.bottleId = snapshot.id;
+    this.isLarge = snapshot.isLarge;
+    this.capacity = snapshot.capacity;
+    this.lastSnapshot = snapshot;
+
+    this.bodyWidth = snapshot.isLarge ? this.style.largeWidth : this.style.smallWidth;
+    this.bodyHeight = snapshot.capacity * this.style.unitHeight + this.style.padding * 2;
+
+    this.glass = scene.add.graphics();
+    this.liquid = scene.add.graphics();
+    this.capG = scene.add.graphics();
+
+    this.hit = scene.add.rectangle(0, 0, this.bodyWidth + 8, this.bodyHeight + 18, 0xffffff, 0);
+    this.hit.setInteractive({ useHandCursor: true });
+    this.hit.on('pointerdown', () => onTap(this.bottleId));
+
+    this.add([this.glass, this.liquid, this.capG, this.hit]);
+    this.setSize(this.bodyWidth, this.bodyHeight);
+    this.render(snapshot);
+    scene.add.existing(this);
+  }
+
+  setSelected(selected: boolean): void {
+    this.selected = selected;
+    this.render(this.lastSnapshot);
+    this.scene.tweens.add({
+      targets: this,
+      y: selected ? this.y - 10 : this.baselineY,
+      duration: 120,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  private baselineY = 0;
+  setBaselineY(y: number): void {
+    this.baselineY = y;
+    this.y = y;
+  }
+
+  render(snapshot: BottleSnapshot): void {
+    this.lastSnapshot = snapshot;
+    const { unitHeight, padding } = this.style;
+    const w = this.bodyWidth;
+    const h = this.bodyHeight;
+    const left = -w / 2;
+    const top = -h / 2;
+    const radius = Math.min(16, w / 3);
+
+    // --- glass ---
+    this.glass.clear();
+    this.glass.lineStyle(3, this.selected ? 0xffffff : 0x9fb4d8, this.selected ? 1 : 0.9);
+    this.glass.fillStyle(0xffffff, 0.06);
+    this.glass.fillRoundedRect(left, top, w, h, radius);
+    this.glass.strokeRoundedRect(left, top, w, h, radius);
+
+    // --- liquid segments (bottom -> top) ---
+    this.liquid.clear();
+    const innerW = w - padding * 2;
+    const innerLeft = left + padding;
+    const bottom = top + h - padding;
+    snapshot.segments.forEach((color, i) => {
+      const segTop = bottom - (i + 1) * unitHeight;
+      const isBottom = i === 0;
+      const r = isBottom ? Math.max(0, radius - padding) : 0;
+      this.liquid.fillStyle(swatch(color).hex, 1);
+      this.liquid.fillRoundedRect(innerLeft, segTop, innerW, unitHeight, {
+        tl: 0,
+        tr: 0,
+        bl: r,
+        br: r,
+      });
+    });
+
+    // --- cap (when sealed) ---
+    this.capG.clear();
+    if (snapshot.capped) {
+      const capH = 12;
+      this.capG.fillStyle(0x3a3f55, 1);
+      this.capG.fillRoundedRect(left + 2, top - capH + 2, w - 4, capH + 6, 5);
+      this.capG.fillStyle(0xb0b8d0, 1);
+      this.capG.fillRoundedRect(left + 6, top - capH - 2, w - 12, capH, 4);
+    }
+  }
+
+  destroy(fromScene?: boolean): void {
+    this.glass.destroy();
+    this.liquid.destroy();
+    this.capG.destroy();
+    this.hit.destroy();
+    super.destroy(fromScene);
+  }
+}

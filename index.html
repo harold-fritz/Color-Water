@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color Walter</title>
+    <link rel="stylesheet" href="/src/ui/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ===== Start screen: title + description + Start button ===== -->
+      <section id="start-screen" class="screen" data-testid="start-screen">
+        <div class="card">
+          <h1 class="logo">Color&nbsp;Walter</h1>
+          <p class="tagline">Más difícil de lo que crees</p>
+          <div class="description">
+            <p>
+              <strong>Color Walter</strong> es un rompecabezas de orden de colores al estilo de las
+              Torres de Hanói. Cada botella guarda capas de líquidos de colores mezclados.
+            </p>
+            <ul>
+              <li>Toca una <strong>botella pequeña</strong> para tomarla y luego una botella de destino.</li>
+              <li>Sólo se vierte el <strong>color de arriba</strong>, y sólo si el destino está vacío o tiene ese mismo color encima.</li>
+              <li>Las <strong>2 botellas grandes</strong> no se pueden mover: sólo reciben líquido.</li>
+              <li>Cuando una botella se llena de un solo color, se le pone un <strong>tapón</strong> y queda sellada.</li>
+              <li>Ganas cuando todas las botellas quedan ordenadas. ¡Hazlo en la <strong>menor cantidad de movimientos</strong>!</li>
+            </ul>
+          </div>
+          <button id="start-button" class="btn btn-primary" data-testid="start-button">Empezar</button>
+        </div>
+      </section>
+
+      <!-- ===== Name screen ===== -->
+      <section id="name-screen" class="screen hidden" data-testid="name-screen">
+        <div class="card">
+          <h2>¿Cómo te llamas?</h2>
+          <p>Ingresa tu nombre para empezar en el nivel 1.</p>
+          <input
+            id="name-input"
+            class="text-input"
+            type="text"
+            maxlength="20"
+            placeholder="Tu nombre"
+            autocomplete="off"
+            data-testid="name-input"
+          />
+          <p id="name-error" class="error hidden" data-testid="name-error">Escribe un nombre para continuar.</p>
+          <button id="name-submit" class="btn btn-primary" data-testid="name-submit">Jugar nivel 1</button>
+        </div>
+      </section>
+
+      <!-- ===== Game screen ===== -->
+      <section id="game-screen" class="screen hidden" data-testid="game-screen">
+        <header id="hud" class="hud">
+          <div class="hud-item">Jugador: <span id="hud-player" data-testid="hud-player">—</span></div>
+          <div class="hud-item">Nivel: <span id="hud-level" data-testid="hud-level">1</span></div>
+          <div class="hud-item">Movimientos: <span id="hud-moves" data-testid="hud-moves">0</span></div>
+          <div class="hud-item">Objetivo: <span id="hud-par" data-testid="hud-par">0</span></div>
+          <div class="hud-item">Mejor: <span id="hud-best" data-testid="hud-best">—</span></div>
+          <div class="hud-actions">
+            <button id="undo-button" class="btn btn-small" data-testid="undo-button">Deshacer</button>
+            <button id="reset-button" class="btn btn-small" data-testid="reset-button">Reiniciar</button>
+          </div>
+        </header>
+
+        <div id="game-canvas" class="game-canvas" data-testid="game-canvas"></div>
+
+        <div id="win-banner" class="win-banner hidden" data-testid="win-banner">
+          <div class="card">
+            <h2 data-testid="win-title">¡Nivel completado!</h2>
+            <p>
+              Movimientos: <span id="win-moves" data-testid="win-moves">0</span>
+              · Objetivo: <span id="win-par" data-testid="win-par">0</span>
+            </p>
+            <p id="win-best" class="best-msg hidden" data-testid="win-best">🏆 ¡Nuevo récord!</p>
+            <div class="win-actions">
+              <button id="replay-button" class="btn btn-small" data-testid="replay-button">Repetir</button>
+              <button id="next-button" class="btn btn-primary" data-testid="next-button">Siguiente nivel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
