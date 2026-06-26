@@ -49,15 +49,16 @@ export class LevelGenerator {
       throw new Error(`Level needs ${distinctColors} colors but only ${COLOR_IDS.length} exist.`);
     }
 
-    // The scramble can land on a board that already contains a "complete" jar
-    // (a full, single-color bottle) — a free win the player never works for.
-    // Re-scramble until we get a clean board. We reuse one RNG stream so each
-    // attempt differs while the whole run stays deterministic for a given seed.
+    // Re-scramble until we get a board that is fit to play, reusing one RNG
+    // stream so each attempt differs while the whole run stays deterministic for
+    // a given seed. "Fit" means it does not already contain a complete jar (a
+    // free win) and its recorded solution is legal under the real engine rules
+    // (capping included). We keep the best candidate as a fallback.
     const rng = new Rng(seed);
     let candidate = this.scrambleOnce(config, filledSmall, rng);
     for (
       let attempt = 1;
-      attempt < LevelGenerator.MAX_ATTEMPTS && hasCompleteJar(candidate.state);
+      attempt < LevelGenerator.MAX_ATTEMPTS && !isPlayable(candidate);
       attempt++
     ) {
       candidate = this.scrambleOnce(config, filledSmall, rng);
@@ -159,6 +160,10 @@ export class LevelGenerator {
       const { color, count } = result.plan;
       from.removeTop(count);
       to.addTop(color, count);
+      // Mirror the engine: a bottle that becomes complete is sealed, which locks
+      // it out of any later pour. A solution that relies on re-using a sealed
+      // bottle is illegal in real play, so model capping here too.
+      if (GameRules.shouldCap(to)) to.cap();
     }
     return work.isSolved;
   }
@@ -171,4 +176,12 @@ function fill(color: ColorId, n: number): ColorId[] {
 /** True if any bottle starts already complete (a full, single-color jar). */
 function hasCompleteJar(state: GameState): boolean {
   return state.bottles.some((b) => b.isComplete);
+}
+
+/** A level is playable when it has no free pre-solved jar and a legal solution. */
+function isPlayable(level: GeneratedLevel): boolean {
+  return (
+    !hasCompleteJar(level.state) &&
+    LevelGenerator.verifySolution(level.state, level.solution)
+  );
 }

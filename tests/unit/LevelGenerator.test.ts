@@ -67,6 +67,26 @@ describe('LevelGenerator', () => {
     expect(engine.completed).toBe(true);
   });
 
+  it('every generated solution is legal in the real engine (capping included), across many seeds', () => {
+    // The engine seals a bottle the moment it is complete, locking it out of
+    // later pours. Generated solutions must respect that, not just the looser
+    // pure-pour rules.
+    for (const config of LEVELS) {
+      for (let seed = 1; seed <= 60; seed++) {
+        const level = generator.generate(config, seed);
+        const engine = new GameEngine(level.state.clone(), { level: config.level, par: level.par });
+        for (const move of level.solution) {
+          const applied = engine.applyMove(move);
+          expect(
+            applied,
+            `level ${config.level} seed ${seed}: move ${move.from}->${move.to} should be legal`,
+          ).not.toBeNull();
+        }
+        expect(engine.completed, `level ${config.level} seed ${seed} should complete`).toBe(true);
+      }
+    }
+  });
+
   it('par equals the solution length and is positive', () => {
     const level = generator.generate(getLevelConfig(1), 5);
     expect(level.par).toBe(level.solution.length);
