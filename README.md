@@ -57,16 +57,18 @@ ejecución (`verifySolution`) antes de entregar el nivel.
 
 ## Scripts
 
+Este proyecto usa **pnpm** como gestor de paquetes.
+
 ```bash
-npm install            # instalar dependencias
+pnpm install           # instalar dependencias
 
-npm run dev            # servidor de desarrollo (Vite) en http://localhost:5173
-npm run build          # type-check + build de producción a dist/
-npm run preview        # sirve el build en http://localhost:4173
+pnpm dev               # servidor de desarrollo (Vite) en http://localhost:5173
+pnpm build             # type-check + build de producción a dist/
+pnpm preview           # sirve el build en http://localhost:4173
 
-npm test               # pruebas unitarias (Vitest) sobre el núcleo puro
-npm run test:e2e       # pruebas funcionales de navegador (Playwright)
-npm run typecheck      # sólo verificación de tipos
+pnpm test              # pruebas unitarias (Vitest) sobre el núcleo puro
+pnpm test:e2e          # pruebas funcionales de navegador (Playwright)
+pnpm typecheck         # sólo verificación de tipos
 ```
 
 ## Pruebas
