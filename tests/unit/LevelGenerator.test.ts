@@ -20,6 +20,21 @@ describe('LevelGenerator', () => {
     expect(state.isSolved).toBe(false);
   });
 
+  it('never starts a level with an already-complete jar, across many seeds', () => {
+    for (const config of LEVELS) {
+      for (let seed = 1; seed <= 80; seed++) {
+        const { state } = generator.generate(config, seed);
+        const complete = state.bottles.filter((b) => b.isComplete);
+        expect(
+          complete,
+          `level ${config.level} seed ${seed} starts with complete jar(s): ${complete
+            .map((b) => b.id)
+            .join(', ')}`,
+        ).toHaveLength(0);
+      }
+    }
+  });
+
   it('produces a solution that actually solves every defined level, across many seeds', () => {
     for (const config of LEVELS) {
       for (let seed = 1; seed <= 40; seed++) {
