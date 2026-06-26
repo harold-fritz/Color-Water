@@ -34,12 +34,6 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # Enables Pages (source = GitHub Actions) on first run if not already on.
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
