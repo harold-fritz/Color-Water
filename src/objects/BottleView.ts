@@ -29,6 +29,7 @@ export class BottleView extends Phaser.GameObjects.Container {
   private style: BottleViewStyle;
   private glass: Phaser.GameObjects.Graphics;
   private liquid: Phaser.GameObjects.Graphics;
+  private gloss: Phaser.GameObjects.Graphics;
   private capG: Phaser.GameObjects.Graphics;
   private hit: Phaser.GameObjects.Rectangle;
   private selected = false;
@@ -57,13 +58,14 @@ export class BottleView extends Phaser.GameObjects.Container {
 
     this.glass = scene.add.graphics();
     this.liquid = scene.add.graphics();
+    this.gloss = scene.add.graphics();
     this.capG = scene.add.graphics();
 
     this.hit = scene.add.rectangle(0, 0, this.bodyWidth + 8, this.bodyHeight + 18, 0xffffff, 0);
     this.hit.setInteractive({ useHandCursor: true });
     this.hit.on('pointerdown', () => onTap(this.bottleId));
 
-    this.add([this.glass, this.liquid, this.capG, this.hit]);
+    this.add([this.glass, this.liquid, this.gloss, this.capG, this.hit]);
     this.setSize(this.bodyWidth, this.bodyHeight);
     this.render(snapshot);
     scene.add.existing(this);
@@ -107,10 +109,11 @@ export class BottleView extends Phaser.GameObjects.Container {
     const innerW = w - padding * 2;
     const innerLeft = left + padding;
     const bottom = top + h - padding;
+    const innerR = Math.max(0, radius - padding);
     snapshot.segments.forEach((color, i) => {
       const segTop = bottom - (i + 1) * unitHeight;
       const isBottom = i === 0;
-      const r = isBottom ? Math.max(0, radius - padding) : 0;
+      const r = isBottom ? innerR : 0;
       this.liquid.fillStyle(swatch(color).hex, 1);
       this.liquid.fillRoundedRect(innerLeft, segTop, innerW, unitHeight, {
         tl: 0,
@@ -119,6 +122,36 @@ export class BottleView extends Phaser.GameObjects.Container {
         br: r,
       });
     });
+
+    // Cylindrical shading over the filled column: a soft highlight down the
+    // left and a shadow down the right make the liquid read as a round 3D tube.
+    const filled = snapshot.segments.length;
+    if (filled > 0) {
+      const liqTop = bottom - filled * unitHeight;
+      const liqH = filled * unitHeight;
+      const bandW = innerW * 0.24;
+      this.liquid.fillStyle(0xffffff, 0.16);
+      this.liquid.fillRoundedRect(innerLeft, liqTop, bandW, liqH, { tl: 0, tr: 0, bl: innerR, br: 0 });
+      this.liquid.fillStyle(0x000000, 0.16);
+      this.liquid.fillRoundedRect(innerLeft + innerW - bandW, liqTop, bandW, liqH, {
+        tl: 0,
+        tr: 0,
+        bl: 0,
+        br: innerR,
+      });
+      // Bright meniscus line on the liquid surface.
+      this.liquid.fillStyle(0xffffff, 0.22);
+      this.liquid.fillRect(innerLeft, liqTop, innerW, 2);
+    }
+
+    // --- glassy shine (sits above the liquid, below the cap) ---
+    this.gloss.clear();
+    const shineW = Math.max(4, w * 0.16);
+    this.gloss.fillStyle(0xffffff, 0.16);
+    this.gloss.fillRoundedRect(left + w * 0.17, top + padding, shineW, h - padding * 2, shineW / 2);
+    const streakW = Math.max(3, w * 0.06);
+    this.gloss.fillStyle(0xffffff, 0.1);
+    this.gloss.fillRoundedRect(left + w * 0.74, top + padding, streakW, h - padding * 2, streakW / 2);
 
     // --- cap (when sealed) ---
     this.capG.clear();
@@ -134,6 +167,7 @@ export class BottleView extends Phaser.GameObjects.Container {
   destroy(fromScene?: boolean): void {
     this.glass.destroy();
     this.liquid.destroy();
+    this.gloss.destroy();
     this.capG.destroy();
     this.hit.destroy();
     super.destroy(fromScene);
