@@ -201,3 +201,11 @@ body {
   justify-content: center;
   margin-top: 16px;
 }
+
+.build-tag {
+  margin: 14px 0 0;
+  color: var(--muted);
+  opacity: 0.6;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
