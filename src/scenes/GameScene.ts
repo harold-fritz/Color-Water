@@ -5,6 +5,10 @@ import type { EventBus } from '../events/EventBus';
 import type { GameEngine } from '../core/engine/GameEngine';
 import type { GameController } from '../controllers/GameController';
 import type { GeneratedLevel } from '../core/level/LevelGenerator';
+import type { AppliedMove } from '../core/models/Move';
+import type { GameStateSnapshot } from '../core/models/GameState';
+import type { ColorId } from '../core/models/Color';
+import { swatch } from '../config/Palette';
 
 export interface GameSceneContext {
   bus: EventBus;
@@ -23,6 +27,7 @@ export class GameScene extends Phaser.Scene {
   private views = new Map<number, BottleView>();
   private unsubscribers: Array<() => void> = [];
   private ctx!: GameSceneContext;
+  private stream!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: GameScene.KEY });
@@ -31,6 +36,10 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.ctx = this.registry.get('ctx') as GameSceneContext;
     this.cameras.main.setBackgroundColor('#222a4d');
+
+    // Graphics layer for the pour stream, kept above the bottles.
+    this.stream = this.add.graphics();
+    this.stream.setDepth(30);
 
     this.buildBoard();
     this.subscribe();
@@ -43,6 +52,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleResize(): void {
+    this.cancelPourAnimations();
     this.views.forEach((v) => v.destroy());
     this.views.clear();
     this.buildBoard();
@@ -163,8 +173,11 @@ export class GameScene extends Phaser.Scene {
   private subscribe(): void {
     const { bus } = this.ctx;
     this.unsubscribers.push(
-      bus.on('move:applied', () => this.repaintAll()),
-      bus.on('move:undone', () => this.repaintAll()),
+      bus.on('move:applied', ({ move, state }) => this.animatePour(move, state)),
+      bus.on('move:undone', () => {
+        this.cancelPourAnimations();
+        this.repaintAll();
+      }),
       bus.on('bottle:selected', ({ bottleId }) => this.views.get(bottleId)?.setSelected(true)),
       bus.on('bottle:deselected', ({ bottleId }) => this.views.get(bottleId)?.setSelected(false)),
       bus.on('bottle:capped', ({ bottleId }) => {
@@ -174,10 +187,129 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  /**
+   * Animate a pour: lift the source bottle, tilt its mouth toward the
+   * destination, then transfer the top run of liquid — the source drains while
+   * the destination fills and a stream connects the two — before settling back.
+   */
+  private animatePour(move: AppliedMove, state: GameStateSnapshot): void {
+    const src = this.views.get(move.from);
+    const dst = this.views.get(move.to);
+    if (!src || !dst) {
+      this.repaintAll();
+      return;
+    }
+
+    const srcAfter = state.bottles.find((b) => b.id === move.from);
+    const dstAfter = state.bottles.find((b) => b.id === move.to);
+    if (!srcAfter || !dstAfter) {
+      this.repaintAll();
+      return;
+    }
+    // The settled liquid each bottle ends up with; the pouring block is the
+    // `count` units of `color` that move between them.
+    const srcStable = srcAfter.segments;
+    const dstStable = dstAfter.segments.slice(0, dstAfter.segments.length - move.count);
+
+    // Finish any pour still in flight (fast taps) before starting this one.
+    this.cancelPourAnimations();
+    this.repaintAll();
+
+    const homeX = src.x;
+    const homeY = src.homeY;
+
+    // Pour from whichever side the destination sits on.
+    const dir = dst.x >= src.x ? 1 : -1;
+    const tilt = dir * 1.05; // radians (~60°)
+    const pourX = dst.x - dir * (dst.bodyWidth / 2 + src.bodyWidth * 0.15);
+    const pourY = dst.y - dst.bodyHeight / 2 - src.bodyHeight * 0.28;
+
+    // Show the pre-pour state explicitly (source full, destination not yet filled).
+    src.renderFlow(srcStable, move.color, move.count, 1);
+    dst.renderFlow(dstStable, move.color, move.count, 0);
+    src.setDepth(20);
+
+    const progress = { p: 0 };
+    this.tweens.add({
+      targets: src,
+      x: pourX,
+      y: pourY,
+      rotation: tilt,
+      duration: 240,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        this.tweens.add({
+          targets: progress,
+          p: 1,
+          duration: 320,
+          ease: 'Sine.easeInOut',
+          onUpdate: () => {
+            src.renderFlow(srcStable, move.color, move.count, 1 - progress.p);
+            dst.renderFlow(dstStable, move.color, move.count, progress.p);
+            this.drawStream(src, dst, dir, move.color, progress.p);
+          },
+          onComplete: () => {
+            this.stream.clear();
+            this.tweens.add({
+              targets: src,
+              x: homeX,
+              y: homeY,
+              rotation: 0,
+              duration: 220,
+              ease: 'Quad.easeIn',
+              onComplete: () => {
+                src.setDepth(0);
+                this.repaintAll();
+              },
+            });
+          },
+        });
+      },
+    });
+  }
+
+  /** Draw the falling stream of liquid from the tilted source spout to the destination. */
+  private drawStream(
+    src: BottleView,
+    dst: BottleView,
+    dir: number,
+    color: ColorId,
+    p: number,
+  ): void {
+    this.stream.clear();
+    // Source spout in world space after tilting about the bottle's centre.
+    const half = src.bodyHeight / 2;
+    const spoutX = src.x + half * Math.sin(src.rotation);
+    const spoutY = src.y - half * Math.cos(src.rotation);
+    const targetX = dst.x - dir * (dst.bodyWidth * 0.18);
+    const targetY = dst.y - dst.bodyHeight / 2 + 6;
+    // Fade in then out so the stream only shows while liquid is mid-flight.
+    const alpha = Math.sin(Math.PI * p) * 0.9;
+    this.stream.lineStyle(Math.max(4, src.bodyWidth * 0.18), swatch(color).hex, alpha);
+    this.stream.beginPath();
+    this.stream.moveTo(spoutX, spoutY);
+    this.stream.lineTo(targetX, targetY);
+    this.stream.strokePath();
+  }
+
+  private resetTransform(view: BottleView): void {
+    this.tweens.killTweensOf(view);
+    view.setRotation(0);
+    view.setDepth(0);
+    view.y = view.homeY;
+  }
+
+  private cancelPourAnimations(): void {
+    this.stream.clear();
+    this.views.forEach((v) => this.resetTransform(v));
+  }
+
   private cleanup(): void {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.unsubscribers.forEach((off) => off());
     this.unsubscribers = [];
+    this.tweens.killAll();
+    this.stream.destroy();
     this.views.forEach((v) => v.destroy());
     this.views.clear();
   }

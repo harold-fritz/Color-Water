@@ -1,6 +1,14 @@
 import Phaser from 'phaser';
 import type { BottleSnapshot } from '../core/models/Bottle';
+import type { ColorId } from '../core/models/Color';
 import { swatch } from '../config/Palette';
+
+/** An in-progress pour: `units` of `color` filling/draining at `fraction` (0..1). */
+interface FlowBlock {
+  color: ColorId;
+  units: number;
+  fraction: number;
+}
 
 export interface BottleViewStyle {
   unitHeight: number;
@@ -88,8 +96,26 @@ export class BottleView extends Phaser.GameObjects.Container {
     this.y = y;
   }
 
+  /** The resting Y this bottle returns to after a lift or pour. */
+  get homeY(): number {
+    return this.baselineY;
+  }
+
   render(snapshot: BottleSnapshot): void {
     this.lastSnapshot = snapshot;
+    this.paint(snapshot.segments, snapshot.capped);
+  }
+
+  /**
+   * Render mid-pour: `stable` is the settled liquid and `flow` is a partial
+   * block of liquid on top of it (rising on the receiver, draining on the
+   * giver). Used only by the pour animation; never caps.
+   */
+  renderFlow(stable: ColorId[], color: ColorId, units: number, fraction: number): void {
+    this.paint(stable, false, { color, units, fraction });
+  }
+
+  private paint(segments: ColorId[], capped: boolean, flow?: FlowBlock): void {
     const { unitHeight, padding } = this.style;
     const w = this.bodyWidth;
     const h = this.bodyHeight;
@@ -110,7 +136,7 @@ export class BottleView extends Phaser.GameObjects.Container {
     const innerLeft = left + padding;
     const bottom = top + h - padding;
     const innerR = Math.max(0, radius - padding);
-    snapshot.segments.forEach((color, i) => {
+    segments.forEach((color, i) => {
       const segTop = bottom - (i + 1) * unitHeight;
       const isBottom = i === 0;
       const r = isBottom ? innerR : 0;
@@ -123,17 +149,26 @@ export class BottleView extends Phaser.GameObjects.Container {
       });
     });
 
-    // Cylindrical shading over the filled column: a soft highlight down the
-    // left and a shadow down the right make the liquid read as a round 3D tube.
-    const filled = snapshot.segments.length;
-    if (filled > 0) {
-      const liqTop = bottom - filled * unitHeight;
-      const liqH = filled * unitHeight;
+    // --- in-progress pour block on top of the settled liquid ---
+    let filledH = segments.length * unitHeight;
+    if (flow && flow.units > 0 && flow.fraction > 0) {
+      const flowH = flow.units * unitHeight * flow.fraction;
+      const blockTop = bottom - filledH - flowH;
+      const r = segments.length === 0 ? innerR : 0;
+      this.liquid.fillStyle(swatch(flow.color).hex, 1);
+      this.liquid.fillRoundedRect(innerLeft, blockTop, innerW, flowH, { tl: 0, tr: 0, bl: r, br: r });
+      filledH += flowH;
+    }
+
+    // Cylindrical shading over the whole filled column: a soft highlight down
+    // the left and a shadow down the right make it read as a round 3D tube.
+    if (filledH > 0) {
+      const liqTop = bottom - filledH;
       const bandW = innerW * 0.24;
       this.liquid.fillStyle(0xffffff, 0.16);
-      this.liquid.fillRoundedRect(innerLeft, liqTop, bandW, liqH, { tl: 0, tr: 0, bl: innerR, br: 0 });
+      this.liquid.fillRoundedRect(innerLeft, liqTop, bandW, filledH, { tl: 0, tr: 0, bl: innerR, br: 0 });
       this.liquid.fillStyle(0x000000, 0.16);
-      this.liquid.fillRoundedRect(innerLeft + innerW - bandW, liqTop, bandW, liqH, {
+      this.liquid.fillRoundedRect(innerLeft + innerW - bandW, liqTop, bandW, filledH, {
         tl: 0,
         tr: 0,
         bl: 0,
@@ -155,7 +190,7 @@ export class BottleView extends Phaser.GameObjects.Container {
 
     // --- cap (when sealed) ---
     this.capG.clear();
-    if (snapshot.capped) {
+    if (capped) {
       const capH = 12;
       this.capG.fillStyle(0x3a3f55, 1);
       this.capG.fillRoundedRect(left + 2, top - capH + 2, w - 4, capH + 6, 5);
