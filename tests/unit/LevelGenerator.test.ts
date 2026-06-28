@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { LevelGenerator } from '@/core/level/LevelGenerator';
 import { getLevelConfig, LEVELS } from '@/config/levels';
 import { GameEngine } from '@/core/engine/GameEngine';
+import { COLOR_IDS } from '@/core/models/Color';
 
 const generator = new LevelGenerator();
 
@@ -91,6 +92,24 @@ describe('LevelGenerator', () => {
     const level = generator.generate(getLevelConfig(1), 5);
     expect(level.par).toBe(level.solution.length);
     expect(level.par).toBeGreaterThan(0);
+  });
+
+  it('keeps generating playable levels well past the hand-tuned curve', () => {
+    // Levels beyond LEVELS are extrapolated; this used to ask for more colors
+    // than the palette has and threw, stranding the player at level 6.
+    for (let level = LEVELS.length + 1; level <= 40; level++) {
+      const config = getLevelConfig(level);
+      expect(config.largeBottles + (config.smallBottles - config.emptySmallBottles)).toBeLessThanOrEqual(
+        COLOR_IDS.length,
+      );
+      const gen = generator.generate(config, level);
+      expect(gen.state.bottles.some((b) => b.isComplete), `level ${level} pre-solved jar`).toBe(false);
+      const engine = new GameEngine(gen.state.clone(), { level, par: gen.par });
+      for (const m of gen.solution) {
+        expect(engine.applyMove(m), `level ${level} move ${m.from}->${m.to}`).not.toBeNull();
+      }
+      expect(engine.completed, `level ${level} should complete`).toBe(true);
+    }
   });
 
   it('throws when colors exceed the palette', () => {

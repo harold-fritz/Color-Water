@@ -1,3 +1,5 @@
+import { COLOR_IDS } from '../core/models/Color';
+
 /** Static description of a level's shape, before any colors are placed. */
 export interface LevelConfig {
   readonly level: number;
@@ -33,6 +35,11 @@ export const MAX_DEFINED_LEVEL = LEVELS.length;
 /**
  * Returns the config for a level. Levels beyond the hand-tuned curve are
  * extrapolated procedurally so the game can continue endlessly.
+ *
+ * The number of distinct colors is bounded by the palette, so once the board
+ * reaches that ceiling we stop adding bottles and keep raising the difficulty
+ * through deeper scrambling instead. (Without this cap, level 7 onwards asked
+ * for more colors than exist and the generator threw, stranding the player.)
  */
 export function getLevelConfig(level: number): LevelConfig {
   if (level >= 1 && level <= LEVELS.length) {
@@ -40,14 +47,22 @@ export function getLevelConfig(level: number): LevelConfig {
   }
   const extra = level - LEVELS.length;
   const base = LEVELS[LEVELS.length - 1];
-  const smallBottles = base.smallBottles + extra;
+  const emptySmallBottles = 2;
+  const largeBottles = base.largeBottles;
+
+  // distinctColors = largeBottles + filledSmall must not exceed the palette.
+  const maxFilledSmall = COLOR_IDS.length - largeBottles;
+  const filledSmall = Math.min(base.smallBottles - base.emptySmallBottles + extra, maxFilledSmall);
+  const smallBottles = filledSmall + emptySmallBottles;
+
   return {
     level,
-    largeBottles: base.largeBottles,
+    largeBottles,
     smallBottles,
-    emptySmallBottles: 2,
+    emptySmallBottles,
     smallCapacity: base.smallCapacity,
     largeCapacity: base.largeCapacity,
-    scrambleMoves: base.scrambleMoves + extra * 10,
+    // Keep ramping difficulty, but cap so very high levels stay quick to build.
+    scrambleMoves: Math.min(base.scrambleMoves + extra * 10, 400),
   };
 }
