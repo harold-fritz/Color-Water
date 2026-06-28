@@ -35,7 +35,17 @@ export class GameScene extends Phaser.Scene {
     this.buildBoard();
     this.subscribe();
 
+    // Re-lay the board whenever the canvas changes size (rotation, resize,
+    // mobile chrome show/hide) so it always fits the available space.
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
+  }
+
+  private handleResize(): void {
+    this.views.forEach((v) => v.destroy());
+    this.views.clear();
+    this.buildBoard();
   }
 
   private buildBoard(): void {
@@ -56,20 +66,26 @@ export class GameScene extends Phaser.Scene {
     const perSide = Math.max(1, leftGroup.length, rightGroup.length);
     const maxCap = large.length ? Math.max(...large.map((b) => b.capacity)) : 0;
 
-    const margin = 56;
-    const playTop = 58;
+    // Margins scale with the canvas so the board breathes on a wide desktop but
+    // stays compact on a narrow phone.
+    const margin = Math.round(Phaser.Math.Clamp(width * 0.058, 16, 56));
+    const playTop = Math.round(Phaser.Math.Clamp(height * 0.085, 24, 58));
     const availH = height - playTop * 2;
 
-    // Large bottles grow with the level, but a side that stacks several is
-    // capped so the column never overflows the canvas.
+    // Large bottles grow with the level, but are capped so a stacked side-column
+    // never overflows vertically and never eats too much of a narrow width.
     const gapY = 26;
     const padding2 = 12; // matches BottleView's default 2 * padding
     const fitUnit = maxCap
       ? (availH - gapY * (perSide - 1) - padding2 * perSide) / (maxCap * perSide)
       : 40;
-    const hiUnit = Math.max(24, Math.min(46, fitUnit));
-    const largeUnit = Math.floor(Phaser.Math.Clamp(24 + level * 2.2, 24, hiUnit));
-    const largeWidth = Math.round(Phaser.Math.Clamp(58 + level * 3.5, 58, 108));
+    // Grow with the level up to a cap, but never above what actually fits the
+    // height (so a short landscape phone shrinks them instead of clipping).
+    const hiUnit = Math.min(46, fitUnit);
+    const largeUnit = Math.max(8, Math.floor(Math.min(24 + level * 2.2, hiUnit)));
+    const largeWidth = Math.round(
+      Phaser.Math.Clamp(58 + level * 3.5, 50, Math.min(108, width * 0.18)),
+    );
     const largeStyle = { unitHeight: largeUnit, largeWidth };
 
     const leftX = margin + largeWidth / 2;
@@ -77,32 +93,40 @@ export class GameScene extends Phaser.Scene {
     this.placeColumn(leftGroup, leftX, height, largeStyle, onTap);
     this.placeColumn(rightGroup, rightX, height, largeStyle, onTap);
 
-    // Small bottles fill the channel between the two large columns.
-    const colGap = 28;
+    // Small bottles fill the channel between the two large columns. They are
+    // arranged in a grid whose cell size — and therefore bottle size — adapts to
+    // the available space so they never overlap, only shrink, on a phone.
+    const colGap = Math.round(Phaser.Math.Clamp(width * 0.02, 10, 28));
     const channelLeft = margin + largeWidth + colGap;
     const channelRight = width - margin - largeWidth - colGap;
     const channelW = channelRight - channelLeft;
-    const channelCenter = (channelLeft + channelRight) / 2;
 
-    const smallUnit = 22;
-    const smallWidth = 48;
-    const step = smallWidth + 22;
-    const maxPerRow = Math.max(1, Math.floor(channelW / step));
-    const perRow = Math.max(1, Math.min(maxPerRow, small.length));
-    const rows = Math.ceil(small.length / perRow);
-    const smallH = small.length ? small[0].capacity * smallUnit + padding2 : 0;
-    const rowGap = smallH + 34;
-    const startY = height / 2 - ((rows - 1) * rowGap) / 2;
+    if (small.length > 0) {
+      const cap = small[0].capacity;
+      // Pick the column count that best fills the channel at a comfortable width.
+      const perRow = Math.max(1, Math.min(small.length, Math.floor(channelW / 60)));
+      const rows = Math.ceil(small.length / perRow);
+      const cellW = channelW / perRow;
+      const cellH = availH / rows;
 
-    for (let r = 0; r < rows; r++) {
-      const rowItems = small.slice(r * perRow, r * perRow + perRow);
-      const y = startY + r * rowGap;
-      this.spread(rowItems.length, channelCenter, step).forEach((x, i) => {
-        const snap = rowItems[i].snapshot();
+      // Bottle size fits the cell but never exceeds the desktop design size.
+      const smallWidth = Math.max(22, Math.min(48, Math.floor(cellW - 12)));
+      const smallUnit = Math.max(12, Math.min(22, Math.floor((cellH - padding2 - 18) / cap)));
+
+      const gridTop = height / 2 - (rows * cellH) / 2;
+      for (let i = 0; i < small.length; i++) {
+        const r = Math.floor(i / perRow);
+        const c = i % perRow;
+        const itemsInRow = Math.min(perRow, small.length - r * perRow);
+        // Center a short final row within the channel.
+        const rowLeft = channelLeft + (channelW - itemsInRow * cellW) / 2;
+        const x = rowLeft + c * cellW + cellW / 2;
+        const y = gridTop + r * cellH + cellH / 2;
+        const snap = small[i].snapshot();
         const view = new BottleView(this, x, y, snap, onTap, { unitHeight: smallUnit, smallWidth });
         view.setBaselineY(y);
         this.views.set(snap.id, view);
-      });
+      }
     }
   }
 
@@ -130,13 +154,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Evenly spaced x positions for `count` items centered on `centerX`. */
-  private spread(count: number, centerX: number, step: number): number[] {
-    const totalWidth = (count - 1) * step;
-    const start = centerX - totalWidth / 2;
-    return Array.from({ length: count }, (_, i) => start + i * step);
-  }
-
   private repaintAll(): void {
     for (const b of this.ctx.engine.currentState.bottles) {
       this.views.get(b.id)?.render(b.snapshot());
@@ -158,6 +175,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
     this.unsubscribers.forEach((off) => off());
     this.unsubscribers = [];
     this.views.forEach((v) => v.destroy());
