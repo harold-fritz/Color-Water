@@ -94,7 +94,7 @@ export class GameScene extends Phaser.Scene {
     const hiUnit = Math.min(46, fitUnit);
     const largeUnit = Math.max(8, Math.floor(Math.min(24 + level * 2.2, hiUnit)));
     const largeWidth = Math.round(
-      Phaser.Math.Clamp(58 + level * 3.5, 50, Math.min(108, width * 0.18)),
+      Phaser.Math.Clamp(58 + level * 3.5, 44, Math.min(108, width * 0.16)),
     );
     const largeStyle = { unitHeight: largeUnit, largeWidth };
 
@@ -103,40 +103,86 @@ export class GameScene extends Phaser.Scene {
     this.placeColumn(leftGroup, leftX, height, largeStyle, onTap);
     this.placeColumn(rightGroup, rightX, height, largeStyle, onTap);
 
-    // Small bottles fill the channel between the two large columns. They are
-    // arranged in a grid whose cell size — and therefore bottle size — adapts to
-    // the available space so they never overlap, only shrink, on a phone.
+    // Small bottles fill the channel between the two large columns.
     const colGap = Math.round(Phaser.Math.Clamp(width * 0.02, 10, 28));
     const channelLeft = margin + largeWidth + colGap;
-    const channelRight = width - margin - largeWidth - colGap;
-    const channelW = channelRight - channelLeft;
+    const channelW = width - 2 * (margin + largeWidth + colGap);
+    this.placeGrid(small, channelLeft, playTop, channelW, availH, 22, 48, onTap);
+  }
 
-    if (small.length > 0) {
-      const cap = small[0].capacity;
-      // Pick the column count that best fills the channel at a comfortable width.
-      const perRow = Math.max(1, Math.min(small.length, Math.floor(channelW / 60)));
-      const rows = Math.ceil(small.length / perRow);
-      const cellW = channelW / perRow;
-      const cellH = availH / rows;
+  /**
+   * Lay `items` out as a grid inside the box (x, y, w, h), centred. The number
+   * of columns is chosen to make the bottles as large as possible, and each
+   * bottle is sized strictly smaller than its cell — so they shrink to fit a
+   * cramped phone but can never overlap. `maxUnit`/`maxWidth` cap the size so a
+   * roomy desktop keeps the original look.
+   */
+  private placeGrid(
+    items: Bottle[],
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    maxUnit: number,
+    maxWidth: number,
+    onTap: (id: number) => void,
+  ): void {
+    if (items.length === 0 || w <= 0 || h <= 0) return;
 
-      // Bottle size fits the cell but never exceeds the desktop design size.
-      const smallWidth = Math.max(22, Math.min(48, Math.floor(cellW - 12)));
-      const smallUnit = Math.max(12, Math.min(22, Math.floor((cellH - padding2 - 18) / cap)));
+    const cap = Math.max(...items.map((b) => b.capacity));
+    const isLarge = items[0].isLarge;
+    const pad2 = 12; // BottleView's default 2 * padding
+    const hGap = 10;
+    const vGap = 14;
 
-      const gridTop = height / 2 - (rows * cellH) / 2;
-      for (let i = 0; i < small.length; i++) {
-        const r = Math.floor(i / perRow);
-        const c = i % perRow;
-        const itemsInRow = Math.min(perRow, small.length - r * perRow);
-        // Center a short final row within the channel.
-        const rowLeft = channelLeft + (channelW - itemsInRow * cellW) / 2;
-        const x = rowLeft + c * cellW + cellW / 2;
-        const y = gridTop + r * cellH + cellH / 2;
-        const snap = small[i].snapshot();
-        const view = new BottleView(this, x, y, snap, onTap, { unitHeight: smallUnit, smallWidth });
-        view.setBaselineY(y);
-        this.views.set(snap.id, view);
+    // Search column counts for the one that yields the largest bottle, breaking
+    // ties toward fewer rows (so a roomy row stays a single row).
+    let best: { cols: number; rows: number; cellW: number; cellH: number; bw: number; bu: number; size: number } | null = null;
+    for (let cols = 1; cols <= items.length; cols++) {
+      const rows = Math.ceil(items.length / cols);
+      const cellW = w / cols;
+      const cellH = h / rows;
+      const bw = Math.min(maxWidth, cellW - hGap);
+      const bu = Math.min(maxUnit, (cellH - vGap - pad2) / cap);
+      if (bw <= 8 || bu <= 3) continue;
+      const size = Math.min(bw / maxWidth, bu / maxUnit);
+      if (!best || size > best.size + 1e-6 || (Math.abs(size - best.size) < 1e-6 && rows < best.rows)) {
+        best = { cols, rows, cellW, cellH, bw, bu, size };
       }
+    }
+    // Degenerate fallback: a single very tight row.
+    if (!best) {
+      const cellW = w / items.length;
+      best = {
+        cols: items.length,
+        rows: 1,
+        cellW,
+        cellH: h,
+        bw: Math.max(8, cellW - 4),
+        bu: Math.max(4, (h - pad2 - 6) / cap),
+        size: 0,
+      };
+    }
+
+    const { cols, rows, cellW, cellH } = best;
+    const unit = Math.max(4, Math.floor(best.bu));
+    const bottleW = Math.max(8, Math.floor(best.bw));
+    const startY = y + (h - rows * cellH) / 2;
+
+    for (let i = 0; i < items.length; i++) {
+      const r = Math.floor(i / cols);
+      const c = i % cols;
+      const itemsInRow = Math.min(cols, items.length - r * cols);
+      const rowStartX = x + (w - itemsInRow * cellW) / 2; // centre a short last row
+      const cx = rowStartX + c * cellW + cellW / 2;
+      const cy = startY + r * cellH + cellH / 2;
+      const style = isLarge
+        ? { unitHeight: unit, largeWidth: bottleW }
+        : { unitHeight: unit, smallWidth: bottleW };
+      const snap = items[i].snapshot();
+      const view = new BottleView(this, cx, cy, snap, onTap, style);
+      view.setBaselineY(cy);
+      this.views.set(snap.id, view);
     }
   }
 
