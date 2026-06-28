@@ -166,9 +166,21 @@ body {
   gap: 8px;
 }
 
+/* The game screen fills the viewport so the canvas can use the full height. */
+#game-screen {
+  height: 100vh;
+  height: 100dvh;
+  justify-content: flex-start;
+}
+
 .game-canvas {
-  width: 960px;
-  max-width: 100%;
+  width: 100%;
+  max-width: 960px;
+  /* Grow to fill the space left under the HUD, but never exceed the design
+     size on large screens so the desktop layout stays as-is. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 680px;
   border-radius: 14px;
   overflow: hidden;
 }
@@ -176,7 +188,7 @@ body {
 .game-canvas canvas {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
 .win-banner {

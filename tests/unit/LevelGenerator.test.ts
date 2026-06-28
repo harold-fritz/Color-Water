@@ -20,6 +20,21 @@ describe('LevelGenerator', () => {
     expect(state.isSolved).toBe(false);
   });
 
+  it('never starts a level with an already-complete jar, across many seeds', () => {
+    for (const config of LEVELS) {
+      for (let seed = 1; seed <= 80; seed++) {
+        const { state } = generator.generate(config, seed);
+        const complete = state.bottles.filter((b) => b.isComplete);
+        expect(
+          complete,
+          `level ${config.level} seed ${seed} starts with complete jar(s): ${complete
+            .map((b) => b.id)
+            .join(', ')}`,
+        ).toHaveLength(0);
+      }
+    }
+  });
+
   it('produces a solution that actually solves every defined level, across many seeds', () => {
     for (const config of LEVELS) {
       for (let seed = 1; seed <= 40; seed++) {
@@ -50,6 +65,26 @@ describe('LevelGenerator', () => {
       expect(applied, `move ${move.from}->${move.to} should be legal`).not.toBeNull();
     }
     expect(engine.completed).toBe(true);
+  });
+
+  it('every generated solution is legal in the real engine (capping included), across many seeds', () => {
+    // The engine seals a bottle the moment it is complete, locking it out of
+    // later pours. Generated solutions must respect that, not just the looser
+    // pure-pour rules.
+    for (const config of LEVELS) {
+      for (let seed = 1; seed <= 60; seed++) {
+        const level = generator.generate(config, seed);
+        const engine = new GameEngine(level.state.clone(), { level: config.level, par: level.par });
+        for (const move of level.solution) {
+          const applied = engine.applyMove(move);
+          expect(
+            applied,
+            `level ${config.level} seed ${seed}: move ${move.from}->${move.to} should be legal`,
+          ).not.toBeNull();
+        }
+        expect(engine.completed, `level ${config.level} seed ${seed} should complete`).toBe(true);
+      }
+    }
   });
 
   it('par equals the solution length and is positive', () => {

@@ -29,11 +29,13 @@ export interface GeneratedLevel {
  * that large ("immovable") bottles can only ever *receive* liquid.
  */
 export class LevelGenerator {
+  /** How many times we re-scramble looking for a board with no pre-solved jar. */
+  private static readonly MAX_ATTEMPTS = 200;
+
   /**
    * @throws if the config violates the color/bottle invariant.
    */
   generate(config: LevelConfig, seed?: number): GeneratedLevel {
-    const rng = new Rng(seed);
     const filledSmall = config.smallBottles - config.emptySmallBottles;
 
     if (config.emptySmallBottles < 1) {
@@ -47,7 +49,26 @@ export class LevelGenerator {
       throw new Error(`Level needs ${distinctColors} colors but only ${COLOR_IDS.length} exist.`);
     }
 
-    const colors = rng.shuffle([...COLOR_IDS]).slice(0, distinctColors) as ColorId[];
+    // Re-scramble until we get a board that is fit to play, reusing one RNG
+    // stream so each attempt differs while the whole run stays deterministic for
+    // a given seed. "Fit" means it does not already contain a complete jar (a
+    // free win) and its recorded solution is legal under the real engine rules
+    // (capping included). We keep the best candidate as a fallback.
+    const rng = new Rng(seed);
+    let candidate = this.scrambleOnce(config, filledSmall, rng);
+    for (
+      let attempt = 1;
+      attempt < LevelGenerator.MAX_ATTEMPTS && !isPlayable(candidate);
+      attempt++
+    ) {
+      candidate = this.scrambleOnce(config, filledSmall, rng);
+    }
+    return candidate;
+  }
+
+  /** Build one scrambled, solvable board (which may still contain a complete jar). */
+  private scrambleOnce(config: LevelConfig, filledSmall: number, rng: Rng): GeneratedLevel {
+    const colors = rng.shuffle([...COLOR_IDS]).slice(0, config.largeBottles + filledSmall) as ColorId[];
 
     // ---- Build the solved board ----
     const bottles: Bottle[] = [];
@@ -139,6 +160,10 @@ export class LevelGenerator {
       const { color, count } = result.plan;
       from.removeTop(count);
       to.addTop(color, count);
+      // Mirror the engine: a bottle that becomes complete is sealed, which locks
+      // it out of any later pour. A solution that relies on re-using a sealed
+      // bottle is illegal in real play, so model capping here too.
+      if (GameRules.shouldCap(to)) to.cap();
     }
     return work.isSolved;
   }
@@ -146,4 +171,17 @@ export class LevelGenerator {
 
 function fill(color: ColorId, n: number): ColorId[] {
   return Array.from({ length: n }, () => color);
+}
+
+/** True if any bottle starts already complete (a full, single-color jar). */
+function hasCompleteJar(state: GameState): boolean {
+  return state.bottles.some((b) => b.isComplete);
+}
+
+/** A level is playable when it has no free pre-solved jar and a legal solution. */
+function isPlayable(level: GeneratedLevel): boolean {
+  return (
+    !hasCompleteJar(level.state) &&
+    LevelGenerator.verifySolution(level.state, level.solution)
+  );
 }
