@@ -45,6 +45,7 @@ export class App {
     hudBest: this.byId('hud-best'),
     undoButton: this.byId('undo-button'),
     resetButton: this.byId('reset-button'),
+    newUserButton: this.byId('new-user-button'),
     winBanner: this.byId('win-banner'),
     winMoves: this.byId('win-moves'),
     winPar: this.byId('win-par'),
@@ -56,10 +57,22 @@ export class App {
   start(): void {
     this.wireShell();
     this.wireBus();
+    this.exposeTestApi();
+    // A returning player skips the intro and name prompt and resumes right where
+    // they left off (name + level + records all come from localStorage).
     if (this.player.hasName) {
       this.el.nameInput.value = this.player.name;
+      this.resumeGame();
     }
-    this.exposeTestApi();
+  }
+
+  /** Jump straight into the game at the stored level for a known player. */
+  private resumeGame(): void {
+    this.show(this.el.startScreen, false);
+    this.show(this.el.nameScreen, false);
+    this.show(this.el.gameScreen, true);
+    this.el.hudPlayer.textContent = this.player.name;
+    this.startLevel(this.player.level);
   }
 
   // ---------------------------------------------------------------- shell ----
@@ -80,6 +93,28 @@ export class App {
     this.el.resetButton.addEventListener('click', () => this.startLevel(this.currentLevel, this.currentSeed));
     this.el.replayButton.addEventListener('click', () => this.startLevel(this.currentLevel, this.currentSeed));
     this.el.nextButton.addEventListener('click', () => this.startLevel(this.currentLevel + 1));
+    this.el.newUserButton.addEventListener('click', () => this.newUser());
+  }
+
+  /** Forget the current player and their records, then prompt for a new name. */
+  private newUser(): void {
+    const ok =
+      globalThis.confirm?.(
+        '¿Jugar como nuevo usuario? Se borrarán el nombre, el nivel y los récords guardados.',
+      ) ?? true;
+    if (!ok) return;
+
+    this.player.clear();
+    this.scores.clear();
+    this.currentLevel = 1;
+
+    this.show(this.el.winBanner, false);
+    this.show(this.el.gameScreen, false);
+    this.show(this.el.startScreen, false);
+    this.show(this.el.nameScreen, true);
+    this.el.nameInput.value = '';
+    this.el.hudBest.textContent = '—';
+    this.el.nameInput.focus();
   }
 
   private submitName(): void {
@@ -100,6 +135,7 @@ export class App {
   private startLevel(level: number, seed = randomSeed()): void {
     this.currentLevel = level;
     this.currentSeed = seed;
+    this.player.setLevel(level); // remember progress so a refresh resumes here
     this.show(this.el.winBanner, false);
 
     const { engine, generated } = this.levels.createEngine(level, this.bus, seed);
