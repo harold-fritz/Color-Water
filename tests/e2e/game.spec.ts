@@ -150,3 +150,47 @@ test.describe('Color Walter – gameplay', () => {
     await expect(page.getByTestId('hud-moves')).toHaveText('0');
   });
 });
+
+test.describe('Color Walter – saved user', () => {
+  test('a refresh resumes the saved name and level without asking again', async ({ page }) => {
+    await startGame(page, 'Helena');
+    // Advance a level so we have progress to resume.
+    await page.evaluate(() => window.__COLORWATER.solve());
+    await page.getByTestId('next-button').click();
+    await expect(page.getByTestId('hud-level')).toHaveText('2');
+
+    await page.reload();
+    // No start/name screen — straight back into the game at level 2.
+    await expect(page.getByTestId('game-screen')).toBeVisible();
+    await expect(page.getByTestId('name-screen')).toBeHidden();
+    await page.waitForFunction(() => Boolean(window.__COLORWATER?.getState()));
+    await expect(page.getByTestId('hud-player')).toHaveText('Helena');
+    await expect(page.getByTestId('hud-level')).toHaveText('2');
+    expect(await page.evaluate(() => window.__COLORWATER.getLevel())).toBe(2);
+  });
+
+  test('"Nuevo usuario" clears the saved player and returns to the name prompt', async ({ page }) => {
+    await startGame(page, 'Helena');
+    await page.evaluate(() => window.__COLORWATER.solve());
+    await page.getByTestId('next-button').click();
+    await expect(page.getByTestId('hud-level')).toHaveText('2');
+
+    page.on('dialog', (d) => d.accept());
+    await page.getByTestId('new-user-button').click();
+    await expect(page.getByTestId('name-screen')).toBeVisible();
+
+    // Play as someone else — they start fresh at level 1.
+    await page.getByTestId('name-input').fill('Marco');
+    await page.getByTestId('name-submit').click();
+    await expect(page.getByTestId('game-screen')).toBeVisible();
+    await page.waitForFunction(() => Boolean(window.__COLORWATER?.getState()));
+    await expect(page.getByTestId('hud-player')).toHaveText('Marco');
+    await expect(page.getByTestId('hud-level')).toHaveText('1');
+
+    // And the switch persists across a refresh.
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.__COLORWATER?.getState()));
+    await expect(page.getByTestId('hud-player')).toHaveText('Marco');
+    await expect(page.getByTestId('hud-level')).toHaveText('1');
+  });
+});

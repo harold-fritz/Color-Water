@@ -45,4 +45,14 @@ export class ScoreService {
     }
     return isBest;
   }
+
+  /** Wipe every stored record (used when switching to a new user). */
+  clear(): void {
+    this.memory = {};
+    try {
+      globalThis.localStorage?.removeItem(ScoreService.KEY);
+    } catch {
+      /* ignore – memory copy already cleared */
+    }
+  }
 }
